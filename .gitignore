@@ -1,0 +1,13 @@
+# python
+__pycache__/
+*.egg-info
+
+# editors
+.idea
+.vscode
+
+# for now: do not commit test data
+test/data/
+
+# dev files
+main.py
