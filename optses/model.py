@@ -1,3 +1,4 @@
+from pyomo.core.base.param import ScalarParam, IndexedParam
 from optses.application.abstract_application import AbstractApplication
 from optses.storage_system import StorageSystem
 
@@ -48,10 +49,15 @@ class OptModel:
     def update_model(self, val_dict: dict) -> None:
         model = self.model
 
-        for name, values in val_dict.items():
-            component = model.find_component(name)
-            for var, val in values.items():
-                component.find_component(var).set_value(val)
+        for block_name, block_values in val_dict.items():
+            block = model.find_component(block_name)
+            for param_name, val in block_values.items():
+                param = block.find_component(param_name)
+                if isinstance(param, ScalarParam):
+                    param.set_value(val)
+                elif isinstance(param, IndexedParam):
+                    for t in model.time:
+                        param[t].set_value(val.iloc[t])
 
     def time_parameters(self, model, config=None):
         # profile = merge_profiles(self._application_model) # TODO: get profile when multiple applications?
