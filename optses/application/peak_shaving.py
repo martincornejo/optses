@@ -5,15 +5,15 @@ import pyomo.environ as opt
 from optses.application.abstract_application import AbstractApplication
 
 class PeakShaving(AbstractApplication):
-    def __init__(self, load_profile: pd.Series, peak_power_price:float, electricity_price=None) -> None:
+    def __init__(self, load_profile: pd.Series, peak_power_price:float, electricity_price=None, peak_power_min=0) -> None:
         if electricity_price is None:
             electricity_price = 0.0
 
         self._power_profile = load_profile 
         self._peak_power_price = peak_power_price
         self._electricity_price = electricity_price
+        self._peak_power_min = peak_power_min
 
-        self.requires_feedin = False
         self.name = "peak_shaving"
 
     @property
@@ -41,6 +41,7 @@ class PeakShaving(AbstractApplication):
         block.power_profile     = opt.Param(model.time, within=opt.Reals, mutable=True, initialize=lambda b, t: self._power_profile.iloc[t])
         block.peak_power_price  = opt.Param(within=opt.NonNegativeReals, mutable=True, initialize=self._peak_power_price)
         block.electricity_price = opt.Param(within=opt.NonNegativeReals, mutable=True, initialize=self._electricity_price)
+        block.peak_power_min    = opt.Param(within=opt.NonNegativeReals, mutable=True, initialize=self._peak_power_min)
         # model.electricity_price = opt.Param(model.time, within=opt.NonNegativeReals, mutable=True, initialize=self.init_electricity_price)
 
     # TODO: make a class to build grid model?
@@ -58,7 +59,7 @@ class PeakShaving(AbstractApplication):
             return b.grid[t]
 
     def variable_peak_power(self, block):
-        block.peak = opt.Var(within=opt.NonNegativeReals)
+        block.peak = opt.Var(within=opt.NonNegativeReals, bounds=(block.peak_power_min, None))
 
     def constraint_peak_power(self, block):
         model = block.model()
