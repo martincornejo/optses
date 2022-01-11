@@ -63,7 +63,7 @@ class SelfConsumptionIncrease(AbstractApplication):
 
         @block.Expression()
         def cost(b):
-            return sum(b.grid[t] * b.electricity_price - b.feedin[t] * b.feedin_tariff for t in model.time)
+            return sum(b.grid[t] * b.electricity_price - b.feedin[t] * b.feedin_tariff for t in model.time) * model.dt
 
     def recover_results(self, block):
         model = block.model()

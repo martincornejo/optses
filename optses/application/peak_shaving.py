@@ -73,7 +73,7 @@ class PeakShaving(AbstractApplication):
         
         @block.Expression()
         def cost(b):
-            return b.peak * b.peak_power_price + sum(b.grid[t] * b.electricity_price for t in model.time)
+            return b.peak * b.peak_power_price + sum(b.grid[t] * b.electricity_price for t in model.time) * model.dt
 
     def recover_results(self, block):
         model = block.model()
