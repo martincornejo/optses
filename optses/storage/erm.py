@@ -99,27 +99,47 @@ class EnergyReservoirModel(AbstractStorageModel):
             "soc"   : np.array([opt.value(block.soc[t]) for t in model.time])
         }
 
-# class EnergyReservoirKyneticModel(EnergyReservoirModel):
-#     def __init__(self, data) -> None:
-#         super().__init__(data)
+class EnergyReservoirKineticModel(EnergyReservoirModel):
+    """EnergyReservoirKineticModel extends the EnergyReservoirModel by differentiating available and bound energy reservoirs"""
+    def __init__(self, capacity, power, kinetic_params) -> None:
+        super().__init__(capacity=capacity, power=power)
+        self._kintetik_params = kinetic_params
 
-#     def build_model(self, block):
-#         super().build(block)
-#         self.kinetic_constraints(block)
+    def build(self, block) -> None:
+        super().build(block)
+        self.kinetic_params(block)
+        self.kinetic_constraints(block)
 
-#     def kinetic_constraints(self):
-#         m = self.model
+    def kinetic_params(self, block):
+        rate_c, rate_d = self._kintetik_params
+        block.rate_c = opt.Param(initialize=rate_c)
+        block.rate_d = opt.Param(initialize=rate_d)
+        # mc: slope     of charge power limit
+        # bc: intercept of charge power limit
+        @block.Expression()
+        def mc(b):
+            return -b.max_power / (b.rate_c * b.capacity)
+        @block.Expression()
+        def bc(b):
+            return b.soc_max * (b.max_power / b.rate_c)
 
-#         m1, m2 = m.m1, m.m2
-#         b1, b2 = m.b1, m.b2
+        @block.Expression()
+        def md(b):
+            return -b.max_power / (b.rate_d * b.capacity)
+        @block.Expression()
+        def bd(b):
+            return b.soc_min * (b.max_power / b.rate_d)
 
-#         def kinetic_charge_constraint_rule(m, i):
-#             return m.pe_d[i] + m.pe_c[i] <= m2*m.soc[i] + b2
-#         m.kinetic_charge_constraint = opt.Constraint(m.time, rule=kinetic_charge_constraint_rule)
+    def kinetic_constraints(self, block):
+        model = block.model()
 
-#         def kinetic_discharge_constraint_rule(m, i):
-#             return m.pe_d[i] + m.pe_c[i] >= m1*m.soc[i] + b1
-#         m.kinetic_discharge_constraint = opt.Constraint(m.time, rule=kinetic_discharge_constraint_rule)
+        @block.Constraint(model.time)
+        def kinetic_charge_constraint(b, t):
+            return b.pc[t] - b.pd[t] <= b.mc*b.soc[t] + b.bc
+
+        @block.Constraint(model.time)
+        def kinetic_discharge_constraint(b, t):
+            return b.pc[t] - b.pd[t] >= b.md*b.soc[t] + b.bd
 
 # class EnergyReservoirDimensionModel(EnergyReservoirModel):
 #     def __init__(self) -> None:
