@@ -15,41 +15,67 @@ class EnergyReservoirModel(AbstractStorageModel):
         #   ...
 
     def build(self, block) -> None:
+        self.variable_power(block)
+        self.variable_soc(block)
+
+        self.constraint_soc(block)
+
+        self.objective_cost(block)
+
+    def variable_power(self, block):
         model = block.model()
-        
         ## Params
-        block.capacity = opt.Param(
-            # doc="Energy capacity of the storage",
-            within=opt.NonNegativeReals,
-            initialize=self._capacity,
-            mutable=True
-        )
         block.max_power = opt.Param(
             within=opt.NonNegativeReals,
             initialize=self._power,
             mutable=True
         )
-        block.soc_min = opt.Param(
-            # within=opt.PercentFraction,
+        ## Variables
+        block.pc = opt.Var(model.time, bounds=(0, block.max_power))
+        block.pd = opt.Var(model.time, bounds=(0, block.max_power))
+
+        @block.Expression(model.time)
+        def power_dc(b, t):
+            return b.pc[t] - b.pd[t]
+
+
+    def variable_soc(self, block):
+        model = block.model()
+        ## Params
+        block.capacity = opt.Param(
             within=opt.NonNegativeReals,
-            # validate=lambda m, v: v < m.soc_max, # ?
+            initialize=self._capacity,
+            mutable=True
+        )
+        block.soc_min = opt.Param(
+            within=opt.NonNegativeReals,
             default=0.0,
             mutable=True
         )
         block.soc_max = opt.Param(
-            # within=opt.PercentFraction,
             within=opt.NonNegativeReals,
-            # validate=lambda m, v: v > m.soc_min,
             default=1.0,
             mutable=True
         )
         block.soc_start = opt.Param(
-            # within=opt.PercentFraction,
             within=opt.NonNegativeReals,
-            # validate=lambda m, v: m.soc_min < v < m.soc_max,
             default=0.5,
             mutable=True
         )
+
+        ## Variables
+        block.soc = opt.Var(model.time, 
+            bounds=(
+                block.soc_min*block.capacity, 
+                block.soc_max*block.capacity
+            )
+        )
+
+
+    def constraint_soc(self, block):
+        model = block.model()
+        
+        ## Params
         block.effc = opt.Param(
             within=opt.PercentFraction,
             default=0.97,
@@ -65,16 +91,6 @@ class EnergyReservoirModel(AbstractStorageModel):
             default=0.0,
             mutable=True
         )
-        
-        ## Variables
-        block.pc = opt.Var(model.time, bounds=(0, block.max_power))
-        block.pd = opt.Var(model.time, bounds=(0, block.max_power))
-
-        block.soc = opt.Var(model.time, bounds=(block.soc_min*block.capacity, block.soc_max*block.capacity))
-
-        @block.Expression(model.time)
-        def power_dc(b, t):
-            return b.pc[t] - b.pd[t]
 
         ## Constraints
         @block.Constraint(model.time)
@@ -87,6 +103,7 @@ class EnergyReservoirModel(AbstractStorageModel):
         def soc_end_constraint(b):
             return b.soc[model.time.last()] >= b.soc_start*b.capacity
 
+    def objective_cost(self, block):
         ## Objective cost
         @block.Expression()
         def cost(m):
@@ -141,14 +158,83 @@ class EnergyReservoirKineticModel(EnergyReservoirModel):
         def kinetic_discharge_constraint(b, t):
             return b.pc[t] - b.pd[t] >= b.md*b.soc[t] + b.bd
 
-# class EnergyReservoirDimensionModel(EnergyReservoirModel):
-#     def __init__(self) -> None:
-#         super().__init__()
+class EnergyReservoirDimensionModel(EnergyReservoirModel):
+    def __init__(self, capacity_cost, power_cost) -> None:
+        self._capacity_cost = capacity_cost
+        self._power_cost = power_cost
 
-#     def energy_capacity_variable(self):
-#         m = self.model
-#         m.cap = opt.Var(within=opt.NonNegativeReals)
-#         m.pwr = opt.Var(within=opt.NonNegativeReals)
+    def build(self, block):
+        self.storage_dimension_variables(block)
+        self.power_variable(block)
+        self.soc_variable(block)
 
-#     def power_limit_constraint(self):
-#         pass
+        self.constraint_soc(block)
+
+        self.storage_dimension_cost(block)
+
+    def storage_dimension_variables(self, block):
+        # params
+        block.capacity_cost = opt.Param(initialize=self._capacity_cost, mutable=True)
+        block.power_cost    = opt.Param(initialize=self._power_cost, mutable=True)
+        
+        # variables
+        block.capacity  = opt.Var(within=opt.NonNegativeReals)
+        block.max_power = opt.Var(within=opt.NonNegativeReals)
+
+    def power_variable(self, block):
+        model = block.model()
+        
+        block.pc = opt.Var(model.time, within=opt.NonNegativeReals)
+        block.pd = opt.Var(model.time, within=opt.NonNegativeReals)
+
+        @block.Constraint(model.time)
+        def power_charge_limit_constraint(b, t):
+            return b.pc[t] <= b.max_power
+        
+        @block.Constraint(model.time)
+        def power_discharge_limit_constraint(b, t):
+            return b.pd[t] <= b.max_power
+
+        @block.Expression(model.time)
+        def power_dc(b, t):
+            return b.pc[t] - b.pd[t]
+        
+    def soc_variable(self, block):
+        model = block.model()
+
+        block.soc_min = opt.Param(
+            within=opt.NonNegativeReals,
+            default=0.0,
+            mutable=True
+        )
+        block.soc_max = opt.Param(
+            within=opt.NonNegativeReals,
+            default=1.0,
+            mutable=True
+        )
+        block.soc_start = opt.Param(
+            within=opt.NonNegativeReals,
+            default=0.5,
+            mutable=True
+        )
+
+        block.soc = opt.Var(model.time, within=opt.NonNegativeReals)
+
+        @block.Constraint(model.time)
+        def soc_lower_bound_constraint(b, t):
+            return b.soc[t] >= b.soc_min * b.capacity
+
+        @block.Constraint(model.time)
+        def soc_upper_bound_constraint(b, t):
+            return b.soc[t] <= b.soc_max * b.capacity
+
+    def storage_dimension_cost(self, block):
+        @block.Expression()
+        def cost(b):
+            return b.capacity * b.capacity_cost + b.max_power * b.power_cost
+
+    def recover_results(self, block):
+        results: dict = super().recover_results(block)
+        results["capacity"]  = opt.value(block.capacity)
+        results["max_power"] = opt.value(block.max_power)
+        return results
