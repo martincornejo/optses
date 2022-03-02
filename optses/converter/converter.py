@@ -37,8 +37,9 @@ class ConstantEfficiencyConverter(AbstractConverter):
     def build(self, block) -> None:
         model = block.model()
 
-        block.effc = opt.Param(within=opt.PercentFraction, initialize=self._effc)
-        block.effd = opt.Param(within=opt.PercentFraction, initialize=self._effd)
+        # TODO: improve naming of variables
+        block.c_effc = opt.Param(within=opt.PercentFraction, initialize=self._effc)
+        block.c_effd = opt.Param(within=opt.PercentFraction, initialize=self._effd)
 
         # block.pemax = opt.Param(within=opt.NonNegativeReals, initialize=self._power)
 
@@ -47,7 +48,7 @@ class ConstantEfficiencyConverter(AbstractConverter):
 
         @block.Constraint(model.time)
         def converter_efficiency(b, t):
-            return b.power_dc[t] == b.effc * b.pec[t] - (1 / b.effd) * b.ped[t]
+            return b.power_dc[t] == b.c_effc * b.pec[t] - (1 / b.c_effd) * b.ped[t]
 
         @block.Expression(model.time)
         def power(b, t):
