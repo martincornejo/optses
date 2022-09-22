@@ -10,13 +10,13 @@ class MultiUse(AbstractApplication):
     def __init__(self, *applications) -> None:
         self._applications = applications
 
-    @property
-    def profile(self):
-        return self._applications[0].profile # 
+    def build(self, block: Model) -> None:
+        for app in self._applications:
+            block.add_component(app.name, opt.Block(rule=app.build))
 
-    def build(self, model: Model) -> None:
-        for application_model in self._applications:
-            model.add_component(
-                application_model.name,
-                opt.Block(rule=application_model.build)
-            )
+        @block.Expression()
+        def cost(b):
+            return sum(block.find_component(app.name).cost for app in self._applications)
+        
+    def recover_results(self, block) -> dict:
+        return {app.name: app.recover_results(block) for app in self._applications}
