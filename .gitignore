@@ -9,5 +9,6 @@ __pycache__/
 # for now: do not commit test data
 test/data/
 
-# dev files
-main.py
+# development temp files
+*_dev.py
+*.ipynb
