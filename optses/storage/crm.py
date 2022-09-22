@@ -15,7 +15,7 @@ class ChargeReservoirModel(AbstractStorageModel):
         r0: float = None,
         soc_bounds: tuple[float, float] = (0.0, 1.0),
         soc_start: float = 0.5,
-        effc: float = 0.97,
+        effc: float = 0.99,
         effd: float = None,
         csd: float = 0.0,
     ) -> None:
@@ -145,6 +145,7 @@ class ChargeReservoirModel(AbstractStorageModel):
         def soc_bounds_upper(b, t):
             return b.soc[t] <= b.soc_max
 
+        # optimize?
         @block.Constraint(model.time)
         def voc_constraint(b, t):
             return (
@@ -180,13 +181,21 @@ class ChargeReservoirModel(AbstractStorageModel):
         block.k_T = opt.Param(initialize=1.2571e-5) # ~ 25°C
         block.soh = opt.Param(initialize=0.99, mutable=True)
 
-        @block.Expression()
-        def k_soc(b):
-            return sum(b.ksoc_ref * (b.soc[t] - 0.5)**3 + b.ksoc_const for t in model.time) / 96 # mean soc
+        @block.Expression(model.time)
+        def k_soc(b, t):
+            return b.ksoc_ref * (b.soc[t] - 0.5)**3 + b.ksoc_const
 
         @block.Expression()
         def calendaric_degradation(b):
-            return ((b.k_soc * b.k_T) ** 2) / (2 * (1 - b.soh)) * 96 * model.dt
+            return sum(((b.k_soc[t] * b.k_T) ** 2) / (2 * (1 - b.soh)) for t in model.time) * model.dt
+
+        # @block.Expression()
+        # def k_soc(b):
+        #     return sum(b.ksoc_ref * (b.soc[t] - 0.5)**3 + b.ksoc_const for t in model.time) / 96 # mean soc
+
+        # @block.Expression()
+        # def calendaric_degradation(b):
+        #     return ((b.k_soc * b.k_T) ** 2) / (2 * (1 - b.soh)) * 96 * model.dt
 
         # Cyclic degradation
         block.soc_min_dod = opt.Var(within=opt.UnitInterval)
@@ -198,7 +207,7 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Expression()
         def fec(b):
-            return model.dt * sum(b.i[t] for t in model.time) / b.capacity
+            return model.dt * sum(b.ic[t] + b.id[t] for t in model.time) / b.cell_capacity # TODO: scale to Ah
         
         @block.Constraint(model.time)
         def soc_min_constraint(b, t):
