@@ -67,7 +67,10 @@ class OptModel:
     def add_time_parameters(self, model, config=None):
         # profile = merge_profiles(self._application_model) # TODO: get profile when multiple applications?
         if config is None:
-            profile = self._power_profile
+            if self._power_profile is not None:
+                profile = self._power_profile
+            else: # arbitrage
+                profile = self._price_profile
             timesteps = len(profile)
             timedelta = profile.index[1] - profile.index[0]
             dt        = timedelta.seconds / 3600
