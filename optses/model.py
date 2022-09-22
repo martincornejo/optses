@@ -5,16 +5,19 @@ from optses.storage_system import StorageSystem
 # from optses.timeseries import merge_profiles, get_time_steps, get_time_delta
 
 import pyomo.environ as opt
-
+import numpy as np
+import pandas as pd
 # class OptModelConfig:
 
 
 class OptModel:
-    def __init__(self, storage_system: list[StorageSystem], application: AbstractApplication) -> None:
+    def __init__(self, storage_system: list[StorageSystem], application: list[AbstractApplication], power_profile: pd.Series) -> None:
         # TODO: relax input "typing", check if input is not list (or iterable) and convert it to one
         self.model = opt.ConcreteModel()
         self._storage_system_models = storage_system
-        self._application_model = application
+        self._application_models = application
+        self._power_profile = power_profile
+        # self._price_profile = price_profile
 
         self._build_model()
 
@@ -29,16 +32,17 @@ class OptModel:
         
         # time parameters
         self.time_parameters(model)
+
+        # grid power
+        self.variable_grid_power(model)
         
         # storage systems
         for storage in self._storage_system_models:
             model.add_component(storage.name, opt.Block(rule=storage.build))
 
         # application
-        model.add_component(
-            self._application_model.name,
-            opt.Block(rule=self._application_model.build)
-        )
+        for application in self._application_models:
+            model.add_component(application.name, opt.Block(rule=application.build))
 
         # power balance constraints
         self.binding_constraints(model)
@@ -62,7 +66,7 @@ class OptModel:
     def time_parameters(self, model, config=None):
         # profile = merge_profiles(self._application_model) # TODO: get profile when multiple applications?
         if config is None:
-            profile = self._application_model.profile
+            profile = self._power_profile
             timesteps = len(profile)
             timedelta = profile.index[1] - profile.index[0]
             dt        = timedelta.seconds / 3600
@@ -70,36 +74,43 @@ class OptModel:
         model.time = opt.RangeSet(0, timesteps-1)
         model.dt   = opt.Param(initialize=dt)
 
+    def variable_grid_power(self, model):
+        model.power_profile = opt.Param(model.time, within=opt.Reals, initialize=lambda m, t: self._power_profile.iloc[t])
+        model.grid = opt.Var(model.time, within=opt.NonNegativeReals)
+        model.feedin = opt.Var(model.time, within=opt.NonNegativeReals)
+
+        @model.Expression(model.time)
+        def grid_power(b, t):
+            return b.grid[t] - b.feedin[t]
 
 
     def binding_constraints(self, model):
         @model.Constraint(model.time)
         def power_balance(m, t):
-            # return m.grid[t] - m.feedin[t] \
-            return m.find_component(self._application_model.name).power[t] \
-                - sum(m.find_component(system.name).power[t] for system in self._storage_system_models) \
-                == m.find_component(self._application_model.name).power_profile[t]
+            return m.grid_power[t] - sum(m.find_component(system.name).power[t] for system in self._storage_system_models) \
+                == m.power_profile[t]
 
     def objective(self, model):
         @model.Objective()
         def objective(m):
             return \
             + sum(model.find_component(system.name).cost for system in self._storage_system_models) \
-            + model.find_component(self._application_model.name).cost
+            + sum(model.find_component(application.name).cost for application in self._application_models)
 
     def recover_results(self):
         model = self.model
         results = dict()
+
+        results["grid"] = np.array([opt.value(model.grid_power[t]) for t in model.time])
 
         for system in self._storage_system_models:
             name = system.name
             block = model.find_component(name)
             results[name] = system.recover_results(block)
 
-        application = self._application_model
-        name = application.name
-        block = model.find_component(name)
-        results[name] = application.recover_results(block)
+        for application in self._application_models:
+            name = application.name
+            block = model.find_component(name)
+            results[name] = application.recover_results(block)
         
-
         return results

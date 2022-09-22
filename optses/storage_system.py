@@ -8,13 +8,9 @@ class StorageSystem:
         if converter_model is None:
             converter_model = IdealConverter()
         
-        self._name = name
+        self.name = name
         self._cell_model = cell_model
         self._converter_model = converter_model
-    
-    @property
-    def name(self):
-        return self._name
 
     def build(self, block):
         self._cell_model.build(block)
@@ -30,3 +26,9 @@ class StorageSystem:
             **self._converter_model.recover_results(block)
         }
 
+# class MultiStorageSystem:
+#     def __init__(self, *systems) -> None:
+#         self.systems = systems
+
+#     def build(self, block):
+#         ...
