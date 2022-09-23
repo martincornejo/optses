@@ -219,7 +219,7 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Expression()
         def dod(b):
-            return b.soc_max - b.soc_min
+            return b.soc_max_dod - b.soc_min_dod
 
         @block.Expression()
         def k_dod(b):
@@ -242,7 +242,7 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         ##
         block.storage_cost = opt.Param(initialize=0.3, mutable=True) # $/Wh
-        block.storage_cost_factor = opt.Param(initialize=1, mutable=True) # 
+        block.storage_cost_factor = opt.Param(initialize=1, mutable=True) #
 
         # objective
         @block.Expression()
