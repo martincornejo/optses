@@ -9,18 +9,19 @@ class AbstractConverter(ABC):
     def build(self, block) -> None:
         pass
 
-    # @abstractmethod
-    # def update_block(self, block):
-    #     pass
     def recover_results(self, block):
         model = block.model()
         return {"power": np.array([opt.value(block.power[t]) for t in model.time])}
 
 
 class IdealConverter(AbstractConverter):
+    def __init__(self, power=None) -> None:
+        self._power = power
+    
     def build(self, block):
         model = block.model()
 
+        # set maximum power?
         @block.Expression(model.time)
         def power(b, t):
             return b.power_dc[t]
@@ -64,14 +65,16 @@ class LinearFitConverter(
         self._k1 = k1
 
     def build(self, block) -> None:
+        model = block.model()
+        
         block.k0 = opt.Param(within=opt.Reals, initialize=self._k0)
         block.k1 = opt.Param(within=opt.Reals, initialize=self._k1)
 
         block.pemax = opt.Param(within=opt.NonNegativeReals, initialize=self._power)
 
-        block.power = opt.Var(block.time)
+        block.power = opt.Var(model.time, bounds=(-block.pemax, block.pemax))
 
-        @block.Constraint(block.time)
+        @block.Constraint(model.time)
         def converter_efficiency(b, t):
             return b.power_dc[t] == b.k1 * b.power[t] + b.k0
 
@@ -93,7 +96,7 @@ class QuadraticFitConverter(AbstractConverter):
 
         block.pemax = opt.Param(within=opt.NonNegativeReals, initialize=self._power)
 
-        block.power = opt.Var(model.time)
+        block.power = opt.Var(model.time, bounds=(-block.pemax, block.pemax))
 
         @block.Expression(model.time)
         def converter_loss(b, t):
