@@ -173,6 +173,16 @@ class ChargeReservoirModel(AbstractStorageModel):
         def power_constraint(b, t):
             return b.power_dc[t] == b.v[t] * b.i[t] * b.cell_serial * b.cell_parallel # W in kW...
 
+        self.degradation_model(block)
+
+        @block.Expression()
+        def cost(b):
+            return b.degradation_cost
+
+
+    def degradation_model(self, block) -> None:
+        model = block.model()
+
         # Calendaric degradation (with constant temperature)
         block.ksoc_ref = opt.Param(initialize=2.857)
         block.ksoc_const = opt.Param(initialize=0.60225)
@@ -246,7 +256,7 @@ class ChargeReservoirModel(AbstractStorageModel):
         block.eol = opt.Param(within=opt.UnitInterval, initialize=0.8, mutable=True)
 
         @block.Expression()
-        def cost(b):
+        def degradation_cost(b):
             return (b.calendaric_degradation + b.cyclic_degradation) * b.initial_capacity * (1 - b.eol)* b.storage_cost # * b.storage_cost_factor
 
     def recover_results(self, block) -> dict:
