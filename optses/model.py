@@ -55,7 +55,11 @@ class OptModel:
         model = self.model
 
         for block_name, block_values in val_dict.items():
-            block = model.find_component(block_name)
+            if block_name == "profile":
+                block = model
+            else:
+                block = model.find_component(block_name)
+            
             for param_name, val in block_values.items():
                 param = block.find_component(param_name)
                 if isinstance(param, ScalarParam):
@@ -81,12 +85,12 @@ class OptModel:
     def add_profiles(self, model):
         # power profile (load profile)
         if (load := self._power_profile) is not None:
-            model.load_power = opt.Param(model.time, within=opt.Reals, initialize=lambda m, t: load.iloc[t])
+            model.load_power = opt.Param(model.time, within=opt.Reals, mutable=True, initialize=lambda m, t: load.iloc[t])
 
         # price profile 
         # TODO split sell/buy prices 
         if (price := self._price_profile) is not None:
-            model.price = opt.Param(model.time, within=opt.Reals, initialize=lambda m, t: price.iloc[t])
+            model.price = opt.Param(model.time, within=opt.Reals, mutable=True, initialize=lambda m, t: price.iloc[t])
 
     def add_grid_power_variables(self, model):
         model.grid = opt.Var(model.time, within=opt.NonNegativeReals)
@@ -114,8 +118,6 @@ class OptModel:
             storage = model.find_component(self._storage.name)
             application = model.find_component(self._application.name)
             return storage.cost + application.cost
-            + sum(model.find_component(system.name).cost for system in self._storage_system_models) \
-            + sum(model.find_component(application.name).cost for application in self._application_models)
 
     def recover_results(self):
         model = self.model
