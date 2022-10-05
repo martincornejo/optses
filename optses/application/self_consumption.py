@@ -37,10 +37,5 @@ class SelfConsumptionIncrease(AbstractApplication):
         # TODO: time-varying prices ?
 
 
-    def recover_results(self, block):
-        # model = block.model()
-        # return {
-        #     "grid":   np.array([opt.value(block.grid[t])   for t in model.time]),
-        #     "feedin": np.array([opt.value(block.feedin[t]) for t in model.time]),
-        # }
-        return
+    def recover_results(self, block) -> dict:
+        return {}
