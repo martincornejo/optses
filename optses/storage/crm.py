@@ -171,7 +171,7 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Constraint(model.time)
         def power_constraint(b, t):
-            return b.power_dc[t] == b.v[t] * b.i[t] * b.cell_serial * b.cell_parallel # W in kW...
+            return b.power_dc[t] == b.v[t] * b.i[t] * b.cell_serial * b.cell_parallel
 
         self.degradation_model(block)
 
@@ -215,7 +215,7 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Expression()
         def fec(b):
-            return model.dt * sum(b.ic[t] + b.id[t] for t in model.time) / b.cell_capacity
+            return model.dt * sum(b.ic[t] + b.id[t] for t in model.time) / (2 * b.cell_capacity)
         
         @block.Constraint(model.time)
         def soc_min_constraint(b, t):
@@ -237,7 +237,8 @@ class ChargeReservoirModel(AbstractStorageModel):
         @block.Expression()
         def crate(b):
             "Average c-rate"
-            return b.fec / 24 # ?
+            T = len(model.time) * model.dt  # horizon length in h
+            return b.fec * 2 / T
 
         @block.Expression()
         def k_crate(b):
@@ -245,10 +246,10 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Expression()
         def cyclic_degradation(b):
-            return ((b.k_dod * b.k_crate)** 2) / (2 * (1 - b.soh)) * b.fec
+            return ((b.k_dod * b.k_crate)** 2) * b.fec / (2 * 100 * (1 - b.soh)) / 100 # p.u. -> % (100)
 
         ##
-        block.storage_cost = opt.Param(initialize=0.3, mutable=True) # $/Wh
+        block.storage_cost = opt.Param(initialize=1, mutable=True) # $/Wh
         # block.storage_cost_factor = opt.Param(initialize=1, mutable=True) #
 
         # objective
@@ -257,7 +258,7 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Expression()
         def degradation_cost(b):
-            return (b.calendaric_degradation + b.cyclic_degradation) * b.initial_capacity * (1 - b.eol)* b.storage_cost # * b.storage_cost_factor
+            return (b.calendaric_degradation + b.cyclic_degradation) * b.storage_cost * b.initial_capacity / (1 - b.eol) # * b.storage_cost_factor
 
     def recover_results(self, block) -> dict:
         model = block.model()
