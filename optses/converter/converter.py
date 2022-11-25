@@ -82,7 +82,6 @@ class LinearFitConverter(
 class QuadraticFitConverter(AbstractConverter):
     def __init__(self, power, k0, k1, k2) -> None:
         self._power = power
-        # TODO: kwarg to specify scaling?
         self._k0 = k0 * power
         self._k1 = k1
         self._k2 = k2 / power
@@ -106,6 +105,45 @@ class QuadraticFitConverter(AbstractConverter):
         def converter_loss_constraint(b, t):
             return b.power_dc[t] <= b.power[t] - b.converter_loss[t]
 
+
+class NottonLossConverter(AbstractConverter):
+    # No standby losses
+    # h0: -69.327
+    # k0: 0.00696564 
+    # k2: 0.0332086
+    def __init__(self, power, m0, k0, k2) -> None:
+        self._power = power
+        self._m0 = m0 / power # / power ** 2 for x^2  
+        self._k0 = k0 * power
+        self._k2 = k2 / power
+
+    def build(self, block) -> None:
+        model = block.model()
+
+        block.m0 = opt.Param(within=opt.Reals, initialize=self._m0)
+        block.k0 = opt.Param(within=opt.Reals, initialize=self._k0)
+        block.k2 = opt.Param(within=opt.Reals, initialize=self._k2)
+
+        block.pemax = opt.Param(within=opt.NonNegativeReals, initialize=self._power)
+
+        block.power_c = opt.Var(model.time, bounds=(0, block.pemax))
+        block.power_d = opt.Var(model.time, bounds=(0, block.pemax))
+        
+        @block.Expression(model.time)
+        def power(b, t):
+            return b.power_c[t] - b.power_d[t]
+
+        @block.Expression(model.time)
+        def abspower(b, t):
+            return b.power_c[t] + b.power_d[t]
+
+        @block.Expression(model.time)
+        def converter_loss(b, t):
+            return b.k0 * (1 - opt.exp(b.m0 * b.abspower[t])) + b.k2 * b.power[t] ** 2
+
+        @block.Constraint(model.time)
+        def converter_loss_constraint(b, t):
+            return b.power_dc[t] == b.power[t] - b.converter_loss[t] # <= ?
 
 class RampinelliFitConverter(AbstractConverter):
     def __init__(self, power, k0, k1, k2) -> None:
