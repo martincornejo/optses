@@ -13,7 +13,6 @@ class AbstractConverter(ABC):
         model = block.model()
         return {"power": np.array([opt.value(block.power[t]) for t in model.time])}
 
-
 class IdealConverter(AbstractConverter):
     def __init__(self, power=None) -> None:
         self._power = power
@@ -25,7 +24,6 @@ class IdealConverter(AbstractConverter):
         @block.Expression(model.time)
         def power(b, t):
             return b.power_dc[t]
-
 
 class ConstantEfficiencyConverter(AbstractConverter):
     def __init__(self, effc, effd=None) -> None:
@@ -55,31 +53,7 @@ class ConstantEfficiencyConverter(AbstractConverter):
         def power(b, t):
             return b.pec[t] - b.ped[t]
 
-
-class LinearFitConverter(
-    AbstractConverter
-):  # NOTE: LinearFit could be a subclass of QuadraticFit
-    def __init__(self, power, k0, k1) -> None:
-        self._power = power
-        self._k0 = k0
-        self._k1 = k1
-
-    def build(self, block) -> None:
-        model = block.model()
-        
-        block.k0 = opt.Param(within=opt.Reals, initialize=self._k0)
-        block.k1 = opt.Param(within=opt.Reals, initialize=self._k1)
-
-        block.pemax = opt.Param(within=opt.NonNegativeReals, initialize=self._power)
-
-        block.power = opt.Var(model.time, bounds=(-block.pemax, block.pemax))
-
-        @block.Constraint(model.time)
-        def converter_efficiency(b, t):
-            return b.power_dc[t] == b.k1 * b.power[t] + b.k0
-
-
-class QuadraticFitConverter(AbstractConverter):
+class QuadraticLossConverter(AbstractConverter):
     def __init__(self, power, k0, k1, k2) -> None:
         self._power = power
         self._k0 = k0 * power
@@ -94,16 +68,18 @@ class QuadraticFitConverter(AbstractConverter):
         block.k2 = opt.Param(within=opt.Reals, initialize=self._k2)
 
         block.pemax = opt.Param(within=opt.NonNegativeReals, initialize=self._power)
-
         block.power = opt.Var(model.time, bounds=(-block.pemax, block.pemax))
 
         @block.Expression(model.time)
         def converter_loss(b, t):
-            return b.k0 + b.k1 * b.power[t] + b.k2 * b.power[t] ** 2
+            return (
+                b.k0 * (1 - opt.exp(-1000 * b.power[t] ** 2)) # 
+                + b.k1 * b.power[t] + b.k2 * b.power[t] ** 2
+            )
 
         @block.Constraint(model.time)
         def converter_loss_constraint(b, t):
-            return b.power_dc[t] <= b.power[t] - b.converter_loss[t]
+            return b.power_dc[t] == b.power[t] - b.converter_loss[t] # <=
 
 
 class NottonLossConverter(AbstractConverter):
