@@ -1,0 +1,19 @@
+name: optses-dev
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - pyomo
+  - glpk
+  - ipopt=3.11.1
+  - ipython
+  - notebook
+  - plotly
+  - matplotlib
+  - pip
+  - pip:
+    - simses
+    - -e .

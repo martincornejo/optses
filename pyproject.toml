@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "optses"
+version = "0.0.1"
+authors = [{ email = "martin.cornejo@tum.de" }]
+requires-python = ">=3.9"
+dependencies = ["pyomo", "numpy", "pandas"]
+
+[project.optional-dependencies]
+tests = ["pytest"]
