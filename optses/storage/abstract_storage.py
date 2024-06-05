@@ -8,7 +8,3 @@ class AbstractStorageModel(ABC):
     def build(self, block) -> None:
         pass
 
-    @abstractmethod
-    def recover_results(self, block) -> dict:
-        pass
-

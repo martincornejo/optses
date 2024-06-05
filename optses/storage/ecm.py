@@ -248,12 +248,3 @@ class RintModel(AbstractStorageModel):
                 * b.initial_capacity
                 / (1 - b.eol)
             )  # * b.storage_cost_factor
-
-    def recover_results(self, block) -> dict:
-        model = block.model()
-        return dict(
-            power_dc=np.array([opt.value(block.power_dc[t]) for t in model.time]),
-            soc=np.array([opt.value(block.soc[t]) for t in model.time]),
-            voltage=np.array([opt.value(block.v[t]) for t in model.time]),
-            current=np.array([opt.value(block.i[t]) for t in model.time]),
-        )

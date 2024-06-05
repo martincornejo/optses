@@ -12,6 +12,3 @@ class Arbitrage(AbstractApplication):
         @block.Expression()
         def cost(b):
             return sum((model.grid[t] - model.feedin[t]) * model.price[t] * model.dt for t in model.time)
-
-    def recover_results(self, block) -> dict:
-        return {}

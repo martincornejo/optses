@@ -107,13 +107,6 @@ class EnergyReservoirModel(AbstractStorageModel):
         def cost(m):
             return 0.0
 
-    def recover_results(self, block):
-        model = block.model()
-        return {
-            "power_dc": np.array([opt.value(block.power_dc[t]) for t in model.time]),
-            "soc": np.array([opt.value(block.soc[t]) for t in model.time]),
-        }
-
 
 class EnergyReservoirKineticModel(EnergyReservoirModel):
     """EnergyReservoirKineticModel extends the EnergyReservoirModel by differentiating available and bound energy reservoirs"""
@@ -266,8 +259,3 @@ class EnergyReservoirDimensionModel(EnergyReservoirModel):
         def cost(b):
             return b.capacity * b.capacity_cost + b.max_power * b.power_cost
 
-    def recover_results(self, block):
-        results: dict = super().recover_results(block)
-        results["capacity"] = opt.value(block.capacity)
-        results["max_power"] = opt.value(block.max_power)
-        return results

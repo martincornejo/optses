@@ -9,10 +9,6 @@ class AbstractConverter(ABC):
     def build(self, block) -> None:
         pass
 
-    def recover_results(self, block):
-        model = block.model()
-        return {"power": np.array([opt.value(block.power[t]) for t in model.time])}
-
 class IdealConverter(AbstractConverter):
     def __init__(self, power=None) -> None:
         self._power = power

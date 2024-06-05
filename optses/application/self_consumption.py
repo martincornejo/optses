@@ -36,6 +36,3 @@ class SelfConsumptionIncrease(AbstractApplication):
         
         # TODO: time-varying prices ?
 
-
-    def recover_results(self, block) -> dict:
-        return {}

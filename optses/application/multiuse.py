@@ -17,6 +17,3 @@ class MultiUse(AbstractApplication):
         @block.Expression()
         def cost(b):
             return sum(block.find_component(app.name).cost for app in self._applications)
-        
-    def recover_results(self, block) -> dict:
-        return {app.name: app.recover_results(block) for app in self._applications}
