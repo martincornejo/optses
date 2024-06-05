@@ -1,4 +1,5 @@
 # python
+.venv/
 __pycache__/
 *.egg-info
 
@@ -8,6 +9,7 @@ __pycache__/
 
 # for now: do not commit test data
 test/data/
+dev/
 
 # development temp files
 *_dev.py
