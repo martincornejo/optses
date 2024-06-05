@@ -5,60 +5,42 @@ import pyomo.environ as opt
 from optses.storage.abstract_storage import AbstractStorageModel
 
 
-class ChargeReservoirModel(AbstractStorageModel):
+class RintModel(AbstractStorageModel):
+    "Internal resistance equivalent circuit model"
+
     def __init__(
         self,
         capacity: float,
-        voltage: float,
-        imax: float = None,
-        voc_params: tuple = None,
-        r0: float = None,
+        ocv,  # callable
+        r0: float,
+        circuit: dict,
+        i_bounds: tuple[float, float] = None,
         soc_bounds: tuple[float, float] = (0.0, 1.0),
         soc_start: float = 0.5,
-        effc: float = 0.99,
-        effd: float = None,
-        csd: float = 0.0,
+        eff: float = 0.99,
     ) -> None:
-        if voc_params is None:
-            voc_params = (0.962857, -0.717143, 0.41, 3.445)
+        # circuit
+        self._parallel = circuit["p"]
+        self._serial = circuit["s"]
 
-        if r0 is None:
-            # r0 = 0.001096
-            r0 = 0.045
-
-        if effd is None:
-            effd = effc
-
+        # params
         self._capacity = capacity
-
-        self._cell_capacity = cell_nominal_capacity = 3.0  # Ah
-        self._cell_voltage = cell_nominal_voltage = 3.2  # V
-        cell_icmax = cell_nominal_capacity * 1.0  # 1.0 C
-        cell_idmax = cell_nominal_capacity * 6.6  # 6.6 C
-
-        # TODO: exact size?
-        # not the same as in simses!
-        self._parallel = voltage / cell_nominal_voltage  # parallel cells
-        self._serial = capacity / voltage / cell_nominal_capacity  # serial cells
-        self.icmax = cell_icmax  # * self._serial
-        self.idmax = cell_idmax  # * self._serial
-
-        self._voc_params = voc_params
+        self._ocv = ocv
         self._r0 = r0
         self._soc_bounds = soc_bounds
         self._soc_start = soc_start
-        self._effc = effc  # charge efficiency
-        self._effd = effd  # discharge efficiency
-        self._csd = csd  # self-discharge current
+        self._eff = eff
+
+        if i_bounds is None:
+            i_bounds = (capacity, capacity)
+        self._i_bounds = i_bounds
 
     def build(self, block) -> None:
         model = block.model()
 
         # params
         block.capacity = opt.Param(initialize=self._capacity, mutable=True)  # kWh
-        block.cell_capacity = opt.Param(
-            initialize=self._cell_capacity, mutable=True
-        )  # Ah
+        block.cell_capacity = opt.Param(initialize=self._capacity, mutable=True)  # Ah
         # block.power = opt.Param(initialize=self._power, mutable=True)
         block.cell_parallel = opt.Param(initialize=self._parallel)
         block.cell_serial = opt.Param(initialize=self._serial)
@@ -73,45 +55,26 @@ class ChargeReservoirModel(AbstractStorageModel):
             within=opt.NonNegativeReals, initialize=self._soc_start, mutable=True
         )
 
-        block.effc = opt.Param(within=opt.PercentFraction, initialize=self._effc)
-        block.effd = opt.Param(within=opt.PercentFraction, initialize=self._effd)
-        block.csd = opt.Param(within=opt.NonNegativeReals, initialize=self._csd)
-
-        # block.imin = opt.Param()
-        # block.imax = opt.Param(initialize=self.imax)
-
-        # block.vmin = opt.Param(within=opt.NonNegativeReals, initialize=3.6) # V
-        # block.vmax = opt.Param(within=opt.NonNegativeReals, initialize=2.0) # V
-        # voc_a, voc_b, voc_c, voc_d = self._voc_params
-        # block.voc_a = opt.Param(initialize=voc_a)
-        # block.voc_b = opt.Param(initialize=voc_b)
-        # block.voc_c = opt.Param(initialize=voc_c)
-        # block.voc_d = opt.Param(initialize=voc_d)
-
-        block.voc_a = opt.Param(initialize=2.900074932012732)
-        block.voc_b = opt.Param(initialize=4.927554283419728)
-        block.voc_c = opt.Param(initialize=-29.299690476948975)
-        block.voc_d = opt.Param(initialize=95.9761469315301)
-        block.voc_e = opt.Param(initialize=-181.93721324798557)
-        block.voc_f = opt.Param(initialize=199.7074219198455)
-        block.voc_g = opt.Param(initialize=-117.75695789380974)
-        block.voc_h = opt.Param(initialize=28.844629090305514)
+        block.effc = opt.Param(within=opt.PercentFraction, initialize=self._eff)
+        block.effd = opt.Param(within=opt.PercentFraction, initialize=self._eff)
 
         # block.r0 = opt.Param(default=0.001096)
         block.r0 = opt.Param(initialize=self._r0, mutable=True)
 
         # vars
         block.ic = opt.Var(
-            model.time, within=opt.NonNegativeReals, bounds=(0, self.icmax)
+            model.time, within=opt.NonNegativeReals, bounds=(0, self._i_bounds[0])
         )
         block.id = opt.Var(
-            model.time, within=opt.NonNegativeReals, bounds=(0, self.idmax)
+            model.time, within=opt.NonNegativeReals, bounds=(0, self._i_bounds[1])
         )
 
-        block.voc = opt.Var(model.time, within=opt.NonNegativeReals)
-        block.v = opt.Var(model.time, within=opt.NonNegativeReals) # , bounds=(block.vmin, block.vmax)
+        block.ocv = opt.Var(model.time, within=opt.NonNegativeReals)
+        block.v = opt.Var(
+            model.time, within=opt.NonNegativeReals
+        )  # , bounds=(block.vmin, block.vmax)
 
-        block.power_dc = opt.Var(model.time, within=opt.Reals)
+        block.cell_power = opt.Var(model.time, within=opt.Reals)
 
         block.soc = opt.Var(model.time, within=opt.UnitInterval)
 
@@ -123,16 +86,16 @@ class ChargeReservoirModel(AbstractStorageModel):
                     b.soc[t]
                     == b.soc_start
                     + model.dt
-                    * (b.ic[t] * b.effc - b.id[t] * (1 / b.effd) - b.csd)
+                    * (b.ic[t] * b.effc - b.id[t] * (1 / b.effd))
                     / b.cell_capacity
                 )
             return (
                 b.soc[t]
                 == b.soc[t - 1]
                 + model.dt
-                * (b.ic[t] * b.effc - b.id[t] * (1 / b.effd) - b.csd)
+                * (b.ic[t] * b.effc - b.id[t] * (1 / b.effd))
                 / b.cell_capacity
-            )  # ?
+            )
 
         # @block.Constraint()
         # def soc_end_constraint(b):
@@ -146,20 +109,7 @@ class ChargeReservoirModel(AbstractStorageModel):
         def soc_bounds_upper(b, t):
             return b.soc[t] <= b.soc_max
 
-        # optimize?
-        @block.Constraint(model.time)
-        def voc_constraint(b, t):
-            return (
-                b.voc[t]
-                == b.voc_a
-                + b.voc_b * b.soc[t]
-                + b.voc_c * b.soc[t] ** 2
-                + b.voc_d * b.soc[t] ** 3
-                + b.voc_e * b.soc[t] ** 4
-                + b.voc_f * b.soc[t] ** 5
-                + b.voc_g * b.soc[t] ** 6
-                + b.voc_h * b.soc[t] ** 7
-            )
+        block.ocv_constraint = opt.Constraint(model.time, rule=self._ocv)
 
         @block.Expression(model.time)
         def i(b, t):
@@ -167,18 +117,40 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Constraint(model.time)
         def voltage_constraint(b, t):
-            return b.v[t] == (b.voc[t] + b.r0 * b.i[t])
+            return b.v[t] == (b.ocv[t] + b.r0 * b.i[t])
 
         @block.Constraint(model.time)
         def power_constraint(b, t):
-            return b.power_dc[t] == b.v[t] * b.i[t] * b.cell_serial * b.cell_parallel
+            return b.cell_power[t] == b.v[t] * b.i[t]
 
-        self.degradation_model(block)
+        @block.Expression(model.time)
+        def power_dc(b, t):
+            return b.cell_power[t] * b.cell_parallel * b.cell_serial
 
-        @block.Expression()
-        def cost(b):
-            return b.degradation_cost
+        @block.Expression(model.time)
+        def i_dc(b, t):
+            return b.i[t] * b.cell_parallel
 
+        @block.Expression(model.time)
+        def v_dc(b, t):
+            return b.v[t] * b.cell_serial
+
+        @block.Expression(model.time)
+        def ocv_dc(b, t):
+            return b.ocv[t] * b.cell_serial
+
+        @block.Expression(model.time)
+        def cell_loss(b, t):
+            return b.r0 * (b.ic[t] + b.id[t]) ** 2
+
+        @block.Expression(model.time)
+        def cell_loss_dc(b, t):
+            return b.cell_loss[t] * b.cell_parallel * b.cell_serial
+
+        # self.degradation_model(block)
+        # @block.Expression()
+        # def cost(b):
+        #     return b.degradation_cost
 
     def degradation_model(self, block) -> None:
         model = block.model()
@@ -186,16 +158,20 @@ class ChargeReservoirModel(AbstractStorageModel):
         # Calendaric degradation (with constant temperature)
         block.ksoc_ref = opt.Param(initialize=2.857)
         block.ksoc_const = opt.Param(initialize=0.60225)
-        block.k_T = opt.Param(initialize=1.2571e-5) # ~ 25°C
+        block.k_T = opt.Param(initialize=1.2571e-5)  # ~ 25°C
         block.soh = opt.Param(initialize=0.99, mutable=True)
 
         @block.Expression(model.time)
         def k_soc(b, t):
-            return b.ksoc_ref * (b.soc[t] - 0.5)**3 + b.ksoc_const
+            return b.ksoc_ref * (b.soc[t] - 0.5) ** 3 + b.ksoc_const
 
         @block.Expression()
         def calendaric_degradation(b):
-            return sum(((b.k_soc[t] * b.k_T) ** 2) / (2 * (1 - b.soh)) for t in model.time) * model.dt * 3600
+            return (
+                sum(((b.k_soc[t] * b.k_T) ** 2) / (2 * (1 - b.soh)) for t in model.time)
+                * model.dt
+                * 3600
+            )
 
         # @block.Expression()
         # def k_soc(b):
@@ -215,8 +191,12 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Expression()
         def fec(b):
-            return model.dt * sum(b.ic[t] + b.id[t] for t in model.time) / (2 * b.cell_capacity)
-        
+            return (
+                model.dt
+                * sum(b.ic[t] + b.id[t] for t in model.time)
+                / (2 * b.cell_capacity)
+            )
+
         @block.Constraint(model.time)
         def soc_min_constraint(b, t):
             return b.soc[t] >= b.soc_min_dod
@@ -232,7 +212,7 @@ class ChargeReservoirModel(AbstractStorageModel):
         @block.Expression()
         def k_dod(b):
             "DOD stress factor"
-            return b.kdod_ref * (b.dod - 0.6)**3 + b.kdod_const
+            return b.kdod_ref * (b.dod - 0.6) ** 3 + b.kdod_const
 
         @block.Expression()
         def crate(b):
@@ -246,19 +226,28 @@ class ChargeReservoirModel(AbstractStorageModel):
 
         @block.Expression()
         def cyclic_degradation(b):
-            return ((b.k_dod * b.k_crate)** 2) * b.fec / (2 * 100 * (1 - b.soh)) / 100 # p.u. -> % (100)
+            return (
+                ((b.k_dod * b.k_crate) ** 2) * b.fec / (2 * 100 * (1 - b.soh)) / 100
+            )  # p.u. -> % (100)
 
         ##
-        block.storage_cost = opt.Param(initialize=1, mutable=True) # $/Wh
+        block.storage_cost = opt.Param(initialize=1, mutable=True)  # $/Wh
         # block.storage_cost_factor = opt.Param(initialize=1, mutable=True) #
 
         # objective
-        block.initial_capacity = opt.Param(within=opt.NonNegativeReals, initialize=opt.value(block.capacity))
+        block.initial_capacity = opt.Param(
+            within=opt.NonNegativeReals, initialize=opt.value(block.capacity)
+        )
         block.eol = opt.Param(within=opt.UnitInterval, initialize=0.8, mutable=True)
 
         @block.Expression()
         def degradation_cost(b):
-            return (b.calendaric_degradation + b.cyclic_degradation) * b.storage_cost * b.initial_capacity / (1 - b.eol) # * b.storage_cost_factor
+            return (
+                (b.calendaric_degradation + b.cyclic_degradation)
+                * b.storage_cost
+                * b.initial_capacity
+                / (1 - b.eol)
+            )  # * b.storage_cost_factor
 
     def recover_results(self, block) -> dict:
         model = block.model()
