@@ -1,6 +1,7 @@
 from optses.storage.abstract_storage import AbstractStorageModel
-from optses.converter.converter import AbstractConverter
-from optses.converter.converter import IdealConverter
+from optses.storage.converter import AbstractConverter
+from optses.storage.converter import IdealConverter
+
 
 class StorageSystem:
     def __init__(
