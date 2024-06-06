@@ -1,3 +1,6 @@
+import pyomo.environ as opt
+
+
 class Load:
     def __init__(self, profile):
         self.profile = profile
